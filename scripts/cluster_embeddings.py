@@ -18,7 +18,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from sklearn.cluster import AgglomerativeClustering
+from sklearn.cluster import BisectingKMeans
 from tqdm import tqdm
 
 
@@ -34,17 +34,16 @@ def load_metadata(path: Path) -> pd.DataFrame:
 
 def cluster(vectors: np.ndarray, levels: list[int]) -> dict[int, np.ndarray]:
     """
-    Run sklearn Ward agglomerative clustering once per level.
+    Run BisectingKMeans once per level.
 
-    Unlike scipy's linkage + fcluster approach, this never builds a full
-    n×n distance matrix — memory stays O(n) rather than O(n²). The
-    trade-off is we fit once per level rather than cutting a single
-    dendrogram, which is fine for a predefined set of levels.
+    BisectingKMeans recursively bisects the data — O(n log k) time and O(n)
+    memory, making it practical for large corpora where AgglomerativeClustering
+    and scipy Ward both require O(n²) distance matrices.
     """
     results = {}
     for n in tqdm(sorted(levels), desc="Clustering levels", unit="level"):
-        model = AgglomerativeClustering(n_clusters=n, linkage='ward')
-        labels = model.fit_predict(vectors) + 1  # make 1-based to match fcluster
+        model = BisectingKMeans(n_clusters=n, random_state=42)
+        labels = model.fit_predict(vectors) + 1  # make 1-based for consistency
         results[n] = labels
         counts = np.bincount(labels)[1:]
         tqdm.write(f"   cluster_{n:02d}: {n} clusters "

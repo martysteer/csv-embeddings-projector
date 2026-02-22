@@ -26,7 +26,11 @@ LEVELS         ?= 3 5 10 20
 VECTORS_TSV    ?= $(OUTPUT_DIR)/$(MODEL_SLUG)/projector_vectors.tsv
 METADATA_TSV   ?= $(OUTPUT_DIR)/$(MODEL_SLUG)/projector_metadata.tsv
 
-.PHONY: all venv download-model download-all-models embed clusters clean clean-all help
+# Facet compression
+FACET_COLS     ?=
+TOP_N          ?= 10
+
+.PHONY: all venv download-model download-all-models embed clusters facets clean clean-all help
 
 all: venv
 
@@ -92,6 +96,23 @@ clusters: $(VENV_DONE)
 		--metadata "$(METADATA_TSV)" \
 		--levels $(LEVELS)
 
+# -- Facets -------------------------------------------------------------------
+
+facets: $(VENV_DONE)
+	@if [ -z "$(FACET_COLS)" ]; then \
+		echo "❌  Usage: make facets FACET_COLS=publisher,genre [TOP_N=10] [MODEL=...]"; \
+		exit 1; \
+	fi
+	@if [ ! -f "$(METADATA_TSV)" ]; then \
+		echo "❌  Metadata not found: $(METADATA_TSV)"; \
+		echo "   Run 'make embed INPUT=...' first."; \
+		exit 1; \
+	fi
+	@$(PYTHON) scripts/compress_metadata.py \
+		"$(METADATA_TSV)" \
+		--columns "$(FACET_COLS)" \
+		--top-n $(TOP_N)
+
 # -- Housekeeping -------------------------------------------------------------
 
 clean:
@@ -111,6 +132,7 @@ help:
 	@echo "  download-all-models  Download all known models"
 	@echo "  embed                Generate embeddings from a CSV"
 	@echo "  clusters             Hierarchical clustering of embedded vectors"
+	@echo "  facets               Compress high-cardinality columns for colour-by"
 	@echo "  clean                Remove output/"
 	@echo "  clean-all            Remove output/, models/, .venv/"
 	@echo "  help                 Show this help"
@@ -123,6 +145,8 @@ help:
 	@echo "  LEVELS       Cluster counts for dendrogram cuts (default: 3 5 10 20)"
 	@echo "  VECTORS_TSV  Vectors file for clusters (default: output/<slug>/projector_vectors.tsv)"
 	@echo "  METADATA_TSV Metadata file for clusters (default: output/<slug>/projector_metadata.tsv)"
+	@echo "  FACET_COLS   Comma-separated columns to compress (required for facets)"
+	@echo "  TOP_N        Number of top values to keep per column (default: 10)"
 	@echo ""
 	@echo "Available models:"
 	@echo "  $(MODEL_MINILM)   no auth required"
@@ -132,5 +156,7 @@ help:
 	@echo "  make embed INPUT=data/sample.csv TEXT_COL=description"
 	@echo "  make clusters                                  # default 3 5 10 20 levels"
 	@echo "  make clusters LEVELS='5 10 25 50'             # custom levels"
+	@echo "  make facets FACET_COLS=publisher,genre        # top 10 + Other"
+	@echo "  make facets FACET_COLS=publisher TOP_N=8      # top 8 + Other"
 	@echo "  make embed INPUT=data/sample.csv TEXT_COL=description MODEL=$(MODEL_GEMMA_300M)"
 	@echo "  make download-model MODEL=$(MODEL_GEMMA_300M)"

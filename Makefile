@@ -59,8 +59,8 @@ download-all-models: $(VENV_DONE)
 # -- Embed --------------------------------------------------------------------
 
 embed: $(VENV_DONE)
-	@if [ -z "$(INPUT)" ] || [ -z "$(TEXT_COL)" ]; then \
-		echo "❌  Usage: make embed INPUT=data/file.csv TEXT_COL=description [MODEL=...]"; \
+	@if [ -z "$(INPUT)" ]; then \
+		echo "❌  Usage: make embed INPUT=data/file.csv [TEXT_COL=description] [MODEL=...]"; \
 		exit 1; \
 	fi
 	@if [ ! -f "$(INPUT)" ]; then \
@@ -70,7 +70,7 @@ embed: $(VENV_DONE)
 	@mkdir -p $(OUTPUT_DIR)/$(MODEL_SLUG)
 	@$(HF_ENV) $(PYTHON) scripts/embed_csv.py \
 		"$(INPUT)" \
-		--text-columns "$(TEXT_COL)" \
+		$(if $(TEXT_COL),--text-columns "$(TEXT_COL)") \
 		--output "$(OUTPUT)" \
 		--model "$(MODEL)"
 
@@ -99,7 +99,7 @@ help:
 	@echo "Variables:"
 	@echo "  MODEL      HuggingFace model ID (default: $(MODEL_MINILM))"
 	@echo "  INPUT      Path to input CSV (required for embed)"
-	@echo "  TEXT_COL   Column(s) to embed, comma-separated (required for embed)"
+	@echo "  TEXT_COL   Column(s) to embed, comma-separated (default: all columns)"
 	@echo "  OUTPUT     Output prefix (default: output/<model-slug>/projector)"
 	@echo ""
 	@echo "Available models:"

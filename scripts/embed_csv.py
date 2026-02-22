@@ -111,8 +111,8 @@ Upload both to: https://projector.tensorflow.org/
     parser.add_argument('input', help='Input CSV file')
     parser.add_argument(
         '--text-columns', '-t',
-        required=True,
-        help='Column(s) to embed (comma-separated for multiple)'
+        default=None,
+        help='Column(s) to embed, comma-separated (default: all columns)'
     )
     parser.add_argument(
         '--output', '-o',
@@ -132,15 +132,27 @@ Upload both to: https://projector.tensorflow.org/
     )
     
     args = parser.parse_args()
-    
-    # Parse text columns
-    text_columns = [c.strip() for c in args.text_columns.split(',')]
-    
+
     # Paths
     input_path = Path(args.input)
     vectors_path = Path(f"{args.output}_vectors.tsv")
     metadata_path = Path(f"{args.output}_metadata.tsv")
-    
+
+    # Load CSV
+    if not input_path.exists():
+        print(f"❌ Error: File not found: {input_path}")
+        sys.exit(1)
+
+    df = load_csv(str(input_path))
+    print(f"📄 Loaded {len(df)} rows, {len(df.columns)} columns")
+
+    # Resolve text columns (default: all)
+    if args.text_columns:
+        text_columns = [c.strip() for c in args.text_columns.split(',')]
+    else:
+        text_columns = list(df.columns)
+        print(f"   No TEXT_COL specified — using all columns: {', '.join(text_columns)}")
+
     print("═" * 60)
     print("CSV to Google Embedding Projector")
     print("═" * 60)
@@ -148,14 +160,6 @@ Upload both to: https://projector.tensorflow.org/
     print(f"  Columns:  {', '.join(text_columns)}")
     print(f"  Model:    {args.model}")
     print()
-    
-    # Load CSV
-    if not input_path.exists():
-        print(f"❌ Error: File not found: {input_path}")
-        sys.exit(1)
-    
-    df = load_csv(str(input_path))
-    print(f"📄 Loaded {len(df)} rows, {len(df.columns)} columns")
     
     # Validate columns exist
     missing = [c for c in text_columns if c not in df.columns]

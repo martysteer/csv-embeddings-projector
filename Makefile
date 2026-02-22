@@ -26,11 +26,16 @@ LEVELS         ?= 3 5 10 20
 VECTORS_TSV    ?= $(OUTPUT_DIR)/$(MODEL_SLUG)/projector_vectors.tsv
 METADATA_TSV   ?= $(OUTPUT_DIR)/$(MODEL_SLUG)/projector_metadata.tsv
 
+# UMAP reduction
+UMAP_DIMS      ?= 50
+UMAP_NEIGHBORS ?= 15
+UMAP_MIN_DIST  ?= 0.1
+
 # Facet compression
 FACET_COLS     ?=
 TOP_N          ?= 10
 
-.PHONY: all venv download-model download-all-models embed clusters facets clean clean-all help
+.PHONY: all venv download-model download-all-models embed umap clusters facets clean clean-all help
 
 all: venv
 
@@ -45,7 +50,7 @@ $(VENV_DONE):
 	fi
 	@python3 -m venv $(VENV_DIR)
 	@$(PIP) install --upgrade pip -q
-	@$(PIP) install sentence-transformers numpy pandas scipy scikit-learn tqdm -q
+	@$(PIP) install sentence-transformers numpy pandas scipy scikit-learn tqdm umap-learn -q
 	@mkdir -p $(OUTPUT_DIR) $(MODELS_DIR)
 	@touch $@
 	@echo "✓ Virtual environment ready"
@@ -83,6 +88,20 @@ embed: $(VENV_DONE)
 		--output "$(OUTPUT)" \
 		--model "$(MODEL)"
 
+# -- UMAP ---------------------------------------------------------------------
+
+umap: $(VENV_DONE)
+	@if [ ! -f "$(VECTORS_TSV)" ]; then \
+		echo "❌  Vectors not found: $(VECTORS_TSV)"; \
+		echo "   Run 'make embed INPUT=...' first."; \
+		exit 1; \
+	fi
+	@$(PYTHON) scripts/umap_reduce.py \
+		"$(VECTORS_TSV)" \
+		--dims $(UMAP_DIMS) \
+		--n-neighbors $(UMAP_NEIGHBORS) \
+		--min-dist $(UMAP_MIN_DIST)
+
 # -- Cluster ------------------------------------------------------------------
 
 clusters: $(VENV_DONE)
@@ -94,7 +113,8 @@ clusters: $(VENV_DONE)
 	@$(PYTHON) scripts/cluster_embeddings.py \
 		"$(VECTORS_TSV)" \
 		--metadata "$(METADATA_TSV)" \
-		--levels $(LEVELS)
+		--levels $(LEVELS) \
+		$(if $(filter-out 0,$(UMAP_DIMS)),--umap-dims $(UMAP_DIMS))
 
 # -- Facets -------------------------------------------------------------------
 
@@ -127,6 +147,7 @@ help:
 	@echo "  download-model       Download MODEL to models/ cache"
 	@echo "  download-all-models  Download all known models"
 	@echo "  embed                Generate embeddings from a CSV"
+	@echo "  umap                 Reduce vectors with UMAP (for clustering or 3D layout)"
 	@echo "  clusters             Hierarchical clustering of embedded vectors"
 	@echo "  facets               Compress high-cardinality columns for colour-by"
 	@echo "  clean                Remove output/"
@@ -138,11 +159,14 @@ help:
 	@echo "  INPUT        Path to input CSV (required for embed)"
 	@echo "  TEXT_COL     Column(s) to embed, comma-separated (default: all columns)"
 	@echo "  OUTPUT       Output prefix (default: output/<model-slug>/projector)"
-	@echo "  LEVELS       Cluster counts for dendrogram cuts (default: 3 5 10 20)"
-	@echo "  VECTORS_TSV  Vectors file for clusters (default: output/<slug>/projector_vectors.tsv)"
-	@echo "  METADATA_TSV Metadata file for clusters (default: output/<slug>/projector_metadata.tsv)"
-	@echo "  FACET_COLS   Comma-separated columns to compress (default: all columns)"
-	@echo "  TOP_N        Number of top values to keep per column (default: 10)"
+	@echo "  LEVELS         Cluster counts for dendrogram cuts (default: 3 5 10 20)"
+	@echo "  UMAP_DIMS      UMAP target dims: 50 for clustering, 3 for 3D layout (default: 50)"
+	@echo "  UMAP_NEIGHBORS UMAP n_neighbors — higher = more global structure (default: 15)"
+	@echo "  UMAP_MIN_DIST  UMAP min_dist — lower = tighter clusters (default: 0.1)"
+	@echo "  VECTORS_TSV    Vectors file (default: output/<slug>/projector_vectors.tsv)"
+	@echo "  METADATA_TSV   Metadata file (default: output/<slug>/projector_metadata.tsv)"
+	@echo "  FACET_COLS     Comma-separated columns to compress (default: all columns)"
+	@echo "  TOP_N          Number of top values to keep per column (default: 10)"
 	@echo ""
 	@echo "Available models:"
 	@echo "  $(MODEL_MINILM)   no auth required"
@@ -150,7 +174,10 @@ help:
 	@echo ""
 	@echo "Examples:"
 	@echo "  make embed INPUT=data/sample.csv TEXT_COL=description"
-	@echo "  make clusters                                  # default 3 5 10 20 levels"
+	@echo "  make clusters                                  # raw vectors, default levels"
+	@echo "  make umap                                      # 50-dim UMAP reduction"
+	@echo "  make umap UMAP_DIMS=3                          # 3D layout for projector"
+	@echo "  make clusters UMAP_DIMS=50                     # cluster UMAP-reduced vectors"
 	@echo "  make clusters LEVELS='5 10 25 50'             # custom levels"
 	@echo "  make facets FACET_COLS=publisher,genre        # top 10 + Other"
 	@echo "  make facets FACET_COLS=publisher TOP_N=8      # top 8 + Other"

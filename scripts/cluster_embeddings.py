@@ -76,6 +76,12 @@ Output:
     parser.add_argument('--levels', '-l', nargs='+', type=int,
                         default=[3, 5, 10, 20],
                         help='Number of clusters to cut at (default: 3 5 10 20)')
+    parser.add_argument('--umap-dims', '-u', type=int, default=0,
+                        help='Use UMAP-reduced vectors of this dimensionality '
+                             'instead of raw vectors. The file '
+                             'projector_umap{N}_vectors.tsv must already exist '
+                             'in the same directory — run make umap first. '
+                             '0 = use raw vectors (default).')
     parser.add_argument('--output', '-o',
                         help='Output path '
                              '(default: <vectors_dir>/projector_clusters_metadata.tsv)')
@@ -87,6 +93,17 @@ Output:
         print(f"❌ Vectors file not found: {vectors_path}")
         print("   Run 'make embed' first.")
         sys.exit(1)
+
+    # Optionally swap in UMAP-reduced vectors for clustering
+    if args.umap_dims > 0:
+        umap_path = vectors_path.parent / f'projector_umap{args.umap_dims}_vectors.tsv'
+        if not umap_path.exists():
+            print(f"❌ UMAP vectors not found: {umap_path}")
+            print(f"   Run 'make umap UMAP_DIMS={args.umap_dims}' first.")
+            sys.exit(1)
+        cluster_vectors_path = umap_path
+    else:
+        cluster_vectors_path = vectors_path
 
     metadata_path = Path(args.metadata) if args.metadata \
         else vectors_path.parent / 'projector_metadata.tsv'
@@ -100,12 +117,13 @@ Output:
     print("═" * 60)
     print("Hierarchical Clustering")
     print("═" * 60)
-    print(f"  Vectors:  {vectors_path}")
+    print(f"  Vectors:  {cluster_vectors_path}"
+          + (" (UMAP-reduced)" if args.umap_dims > 0 else ""))
     print(f"  Metadata: {metadata_path}")
     print(f"  Levels:   {args.levels}")
     print()
 
-    vectors = load_vectors(vectors_path)
+    vectors = load_vectors(cluster_vectors_path)
     print(f"📐 Loaded {vectors.shape[0]} vectors × {vectors.shape[1]} dims")
 
     df = load_metadata(metadata_path)

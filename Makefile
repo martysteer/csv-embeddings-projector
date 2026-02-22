@@ -21,7 +21,12 @@ MODEL_SLUG := $(shell echo "$(MODEL)" | tr '/' '\n' | tail -1 | tr '[:upper:]' '
 OUTPUT   ?= $(OUTPUT_DIR)/$(MODEL_SLUG)/projector
 HF_ENV   := env "HF_HUB_CACHE=$(CURDIR)/$(MODELS_DIR)" TRANSFORMERS_VERBOSITY=error
 
-.PHONY: all venv download-model download-all-models embed clean clean-all help
+# Clustering levels — number of clusters to cut the dendrogram at
+LEVELS         ?= 3 5 10 20
+VECTORS_TSV    ?= $(OUTPUT_DIR)/$(MODEL_SLUG)/projector_vectors.tsv
+METADATA_TSV   ?= $(OUTPUT_DIR)/$(MODEL_SLUG)/projector_metadata.tsv
+
+.PHONY: all venv download-model download-all-models embed clusters clean clean-all help
 
 all: venv
 
@@ -36,7 +41,7 @@ $(VENV_DONE):
 	fi
 	@python3 -m venv $(VENV_DIR)
 	@$(PIP) install --upgrade pip -q
-	@$(PIP) install sentence-transformers numpy pandas -q
+	@$(PIP) install sentence-transformers numpy pandas scipy -q
 	@mkdir -p $(OUTPUT_DIR) $(MODELS_DIR)
 	@touch $@
 	@echo "✓ Virtual environment ready"
@@ -74,6 +79,19 @@ embed: $(VENV_DONE)
 		--output "$(OUTPUT)" \
 		--model "$(MODEL)"
 
+# -- Cluster ------------------------------------------------------------------
+
+clusters: $(VENV_DONE)
+	@if [ ! -f "$(VECTORS_TSV)" ]; then \
+		echo "❌  Vectors not found: $(VECTORS_TSV)"; \
+		echo "   Run 'make embed INPUT=...' first."; \
+		exit 1; \
+	fi
+	@$(PYTHON) scripts/cluster_embeddings.py \
+		"$(VECTORS_TSV)" \
+		--metadata "$(METADATA_TSV)" \
+		--levels $(LEVELS)
+
 # -- Housekeeping -------------------------------------------------------------
 
 clean:
@@ -92,15 +110,19 @@ help:
 	@echo "  download-model       Download MODEL to models/ cache"
 	@echo "  download-all-models  Download all known models"
 	@echo "  embed                Generate embeddings from a CSV"
+	@echo "  clusters             Hierarchical clustering of embedded vectors"
 	@echo "  clean                Remove output/"
 	@echo "  clean-all            Remove output/, models/, .venv/"
 	@echo "  help                 Show this help"
 	@echo ""
 	@echo "Variables:"
-	@echo "  MODEL      HuggingFace model ID (default: $(MODEL_MINILM))"
-	@echo "  INPUT      Path to input CSV (required for embed)"
-	@echo "  TEXT_COL   Column(s) to embed, comma-separated (default: all columns)"
-	@echo "  OUTPUT     Output prefix (default: output/<model-slug>/projector)"
+	@echo "  MODEL        HuggingFace model ID (default: $(MODEL_MINILM))"
+	@echo "  INPUT        Path to input CSV (required for embed)"
+	@echo "  TEXT_COL     Column(s) to embed, comma-separated (default: all columns)"
+	@echo "  OUTPUT       Output prefix (default: output/<model-slug>/projector)"
+	@echo "  LEVELS       Cluster counts for dendrogram cuts (default: 3 5 10 20)"
+	@echo "  VECTORS_TSV  Vectors file for clusters (default: output/<slug>/projector_vectors.tsv)"
+	@echo "  METADATA_TSV Metadata file for clusters (default: output/<slug>/projector_metadata.tsv)"
 	@echo ""
 	@echo "Available models:"
 	@echo "  $(MODEL_MINILM)   no auth required"
@@ -108,5 +130,7 @@ help:
 	@echo ""
 	@echo "Examples:"
 	@echo "  make embed INPUT=data/sample.csv TEXT_COL=description"
+	@echo "  make clusters                                  # default 3 5 10 20 levels"
+	@echo "  make clusters LEVELS='5 10 25 50'             # custom levels"
 	@echo "  make embed INPUT=data/sample.csv TEXT_COL=description MODEL=$(MODEL_GEMMA_300M)"
 	@echo "  make download-model MODEL=$(MODEL_GEMMA_300M)"

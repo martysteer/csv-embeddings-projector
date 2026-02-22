@@ -37,7 +37,7 @@ TEXT_COL       ?=
 OUTPUT         ?= $(OUTPUT_DIR)/$(MODEL_SLUG)/projector
 
 # HuggingFace cache env vars (HF_HUB_CACHE is the current standard)
-HF_ENV         := HF_HUB_CACHE='$(CURDIR)/$(MODELS_DIR)' TRANSFORMERS_VERBOSITY=error
+HF_ENV         := env "HF_HUB_CACHE=$(CURDIR)/$(MODELS_DIR)" TRANSFORMERS_VERBOSITY=error
 
 .PHONY: all venv embed clean clean-all info download-model download-all-models list-models
 

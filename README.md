@@ -1,4 +1,4 @@
-# csv-projector
+# csv-embeddings-projector
 
 Generate embeddings from CSV files for [Google Embedding Projector](https://projector.tensorflow.org/).
 

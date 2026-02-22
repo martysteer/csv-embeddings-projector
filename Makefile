@@ -19,10 +19,16 @@ SCRIPTS_DIR    := scripts
 # Embedding model (can override: make embed MODEL=...)
 MODEL          ?= sentence-transformers/all-MiniLM-L6-v2
 
+# Derive a filesystem-safe slug from the model name (last path component, lowercased)
+MODEL_SLUG     := $(shell echo "$(MODEL)" | tr '/' '\n' | tail -1 | tr '[:upper:]' '[:lower:]' | tr '_' '-')
+
 # Input parameters (required for embed target)
 INPUT          ?=
 TEXT_COL       ?=
-OUTPUT         ?= $(OUTPUT_DIR)/projector
+OUTPUT         ?= $(OUTPUT_DIR)/$(MODEL_SLUG)/projector
+
+# HuggingFace cache env vars (HF_HUB_CACHE is the current standard)
+HF_ENV         := HF_HUB_CACHE=$(abspath $(MODELS_DIR)) TRANSFORMERS_VERBOSITY=error
 
 .PHONY: all venv embed clean clean-all info download-model
 
@@ -54,7 +60,7 @@ $(VENV_DONE):
 # =============================================================================
 download-model: $(VENV_DONE) | $(MODELS_DIR)
 	@echo "Downloading embedding model: $(MODEL)"
-	@TRANSFORMERS_CACHE=$(MODELS_DIR) $(PYTHON) -c \
+	@$(HF_ENV) $(PYTHON) -c \
 		"from sentence_transformers import SentenceTransformer; \
 		SentenceTransformer('$(MODEL)')"
 	@echo "✓ Model cached to $(MODELS_DIR)"
@@ -77,7 +83,7 @@ embed: $(VENV_DONE)
 		echo "❌ Error: Input file '$(INPUT)' not found"; \
 		exit 1; \
 	fi
-	@mkdir -p $(OUTPUT_DIR)
+	@mkdir -p $(OUTPUT_DIR)/$(MODEL_SLUG)
 	@echo "═══════════════════════════════════════════════════════════════"
 	@echo "Generating embeddings"
 	@echo "═══════════════════════════════════════════════════════════════"
@@ -86,46 +92,8 @@ embed: $(VENV_DONE)
 	@echo "  Model:    $(MODEL)"
 	@echo "  Output:   $(OUTPUT)_vectors.tsv / $(OUTPUT)_metadata.tsv"
 	@echo ""
-	@TRANSFORMERS_CACHE=$(MODELS_DIR) $(PYTHON) $(SCRIPTS_DIR)/embed_csv.py \
+	@$(HF_ENV) $(PYTHON) $(SCRIPTS_DIR)/embed_csv.py \
 		"$(INPUT)" \
 		--text-columns "$(TEXT_COL)" \
 		--output "$(OUTPUT)" \
 		--model "$(MODEL)"
-
-# =============================================================================
-# Housekeeping
-# =============================================================================
-clean:
-	@echo "Removing output files..."
-	@rm -rf $(OUTPUT_DIR)/*
-	@echo "✓ Output cleaned"
-
-clean-all:
-	@echo "Removing all generated files..."
-	@rm -rf $(VENV_DIR) $(OUTPUT_DIR) $(MODELS_DIR) .python-version
-	@echo "✓ All files removed"
-
-info:
-	@echo "═══════════════════════════════════════════════════════════════"
-	@echo "CSV Embeddings Projector"
-	@echo "═══════════════════════════════════════════════════════════════"
-	@echo ""
-	@echo "Status:"
-	@if [ -f $(VENV_DONE) ]; then echo "  ✓ Virtual environment ready"; else echo "  ✗ Run 'make venv' first"; fi
-	@if [ -d $(MODELS_DIR) ] && [ "$$(ls -A $(MODELS_DIR) 2>/dev/null)" ]; then \
-		echo "  ✓ Model cached"; \
-	else \
-		echo "  ○ Model will download on first use"; \
-	fi
-	@echo ""
-	@echo "Output files:"
-	@if [ -d $(OUTPUT_DIR) ] && [ "$$(ls -A $(OUTPUT_DIR) 2>/dev/null)" ]; then \
-		ls -lh $(OUTPUT_DIR)/*.tsv 2>/dev/null | awk '{print "  " $$9 " (" $$5 ")"}' || echo "  (none)"; \
-	else \
-		echo "  (none)"; \
-	fi
-	@echo ""
-	@echo "Usage:"
-	@echo "  make embed INPUT=data/myfile.csv TEXT_COL=description"
-	@echo ""
-	@echo "Then upload to: https://projector.tensorflow.org/"

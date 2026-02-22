@@ -48,8 +48,8 @@ Output:
     )
     parser.add_argument('metadata',
                         help='Path to projector_metadata.tsv')
-    parser.add_argument('--columns', '-c', required=True,
-                        help='Comma-separated list of columns to compress')
+    parser.add_argument('--columns', '-c', default=None,
+                        help='Comma-separated columns to compress (default: all columns)')
     parser.add_argument('--top-n', '-n', type=int, default=10,
                         help='Number of top values to keep (default: 10)')
     parser.add_argument('--output', '-o',
@@ -66,24 +66,25 @@ Output:
     output_path = Path(args.output) if args.output \
         else metadata_path.parent / 'projector_facets_metadata.tsv'
 
-    columns = [c.strip() for c in args.columns.split(',')]
-
     print("═" * 60)
     print("Compress Metadata Columns")
     print("═" * 60)
     print(f"  Metadata: {metadata_path}")
-    print(f"  Columns:  {', '.join(columns)}")
     print(f"  Top N:    {args.top_n}")
     print()
 
     df = pd.read_csv(metadata_path, sep='\t', dtype=str).fillna('')
 
-    # Validate columns exist
-    missing = [c for c in columns if c not in df.columns]
-    if missing:
-        print(f"❌ Column(s) not found: {', '.join(missing)}")
-        print(f"   Available: {', '.join(df.columns)}")
-        sys.exit(1)
+    if args.columns:
+        columns = [c.strip() for c in args.columns.split(',')]
+        missing = [c for c in columns if c not in df.columns]
+        if missing:
+            print(f"❌ Column(s) not found: {', '.join(missing)}")
+            print(f"   Available: {', '.join(df.columns)}")
+            sys.exit(1)
+    else:
+        columns = list(df.columns)
+        print(f"   No columns specified — compressing all: {', '.join(columns)}")
 
     for col in columns:
         n_unique = df[col].nunique()

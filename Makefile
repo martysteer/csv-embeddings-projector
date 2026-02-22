@@ -16,8 +16,17 @@ OUTPUT_DIR     := output
 MODELS_DIR     := models
 SCRIPTS_DIR    := scripts
 
-# Embedding model (can override: make embed MODEL=...)
-MODEL          ?= sentence-transformers/all-MiniLM-L6-v2
+# =============================================================================
+# Available Models
+# =============================================================================
+# Use as: make embed MODEL=$(MODEL_MINILM) ...
+#      or: make embed MODEL=sentence-transformers/all-MiniLM-L6-v2 ...
+#
+MODEL_MINILM      := sentence-transformers/all-MiniLM-L6-v2
+MODEL_GEMMA_300M  := google/embeddinggemma-300m
+
+# Active model (default: MiniLM; override on command line)
+MODEL          ?= $(MODEL_MINILM)
 
 # Derive a filesystem-safe slug from the model name (last path component, lowercased)
 MODEL_SLUG     := $(shell echo "$(MODEL)" | tr '/' '\n' | tail -1 | tr '[:upper:]' '[:lower:]' | tr '_' '-')
@@ -30,7 +39,7 @@ OUTPUT         ?= $(OUTPUT_DIR)/$(MODEL_SLUG)/projector
 # HuggingFace cache env vars (HF_HUB_CACHE is the current standard)
 HF_ENV         := HF_HUB_CACHE=$(abspath $(MODELS_DIR)) TRANSFORMERS_VERBOSITY=error
 
-.PHONY: all venv embed clean clean-all info download-model
+.PHONY: all venv embed clean clean-all info download-model download-all-models list-models
 
 all: venv
 
@@ -62,8 +71,24 @@ download-model: $(VENV_DONE) | $(MODELS_DIR)
 	@echo "Downloading embedding model: $(MODEL)"
 	@$(HF_ENV) $(PYTHON) -c \
 		"from sentence_transformers import SentenceTransformer; \
-		SentenceTransformer('$(MODEL)')"
+		SentenceTransformer('$(MODEL)', backend='torch', trust_remote_code=True, model_kwargs={'torch_dtype': 'float32'})"
 	@echo "✓ Model cached to $(MODELS_DIR)"
+
+download-all-models: $(VENV_DONE) | $(MODELS_DIR)
+	@echo "Downloading all known models..."
+	@$(MAKE) download-model MODEL=$(MODEL_MINILM)
+	@$(MAKE) download-model MODEL=$(MODEL_GEMMA_300M)
+	@echo "✓ All models cached"
+
+list-models:
+	@echo "Available models:"
+	@echo "  minilm     $(MODEL_MINILM)   (no auth required)"
+	@echo "  gemma-300m $(MODEL_GEMMA_300M)  (HF_TOKEN required - gated model)"
+	@echo ""
+	@echo "Usage:"
+	@echo "  make download-model MODEL=\$$(MODEL_MINILM)"
+	@echo "  make download-model MODEL=\$$(MODEL_GEMMA_300M)  # requires: export HF_TOKEN=hf_..."
+	@echo "  make embed INPUT=data/file.csv TEXT_COL=title MODEL=\$$(MODEL_GEMMA_300M)"
 
 # =============================================================================
 # Embedding Generation

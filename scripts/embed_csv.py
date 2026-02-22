@@ -43,7 +43,12 @@ def combine_text_columns(df: pd.DataFrame, columns: list[str]) -> list[str]:
 def generate_embeddings(texts: list[str], model_name: str, batch_size: int = 64) -> np.ndarray:
     """Generate embeddings for text list with progress."""
     print(f"📖 Loading model: {model_name}")
-    model = SentenceTransformer(model_name)
+    model = SentenceTransformer(
+        model_name,
+        backend="torch",
+        trust_remote_code=True,
+        model_kwargs={"torch_dtype": "float32"},
+    )
     
     print(f"🔢 Generating embeddings for {len(texts)} records...")
     embeddings = []
@@ -173,6 +178,7 @@ Upload both to: https://projector.tensorflow.org/
     
     # Ensure output directory exists
     vectors_path.parent.mkdir(parents=True, exist_ok=True)
+    metadata_path.parent.mkdir(parents=True, exist_ok=True)
     
     # Save outputs
     print()

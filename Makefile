@@ -1,11 +1,6 @@
-# =============================================================================
-# CSV to Google Embeddings Projector
-# =============================================================================
-# Generates embeddings from CSV files for Google's Embedding Projector
+# CSV to Google Embedding Projector
 # Usage: make embed INPUT=data/myfile.csv TEXT_COL=description
-# =============================================================================
 
-# --- Configuration ---
 PYTHON_VERSION := 3.11
 VENV_DIR       := .venv
 PYTHON         := $(VENV_DIR)/bin/python
@@ -14,117 +9,104 @@ VENV_DONE      := $(VENV_DIR)/.done
 
 OUTPUT_DIR     := output
 MODELS_DIR     := models
-SCRIPTS_DIR    := scripts
 
-# =============================================================================
-# Available Models
-# =============================================================================
-# Use as: make embed MODEL=$(MODEL_MINILM) ...
-#      or: make embed MODEL=sentence-transformers/all-MiniLM-L6-v2 ...
-#
-MODEL_MINILM      := sentence-transformers/all-MiniLM-L6-v2
-MODEL_GEMMA_300M  := google/embeddinggemma-300m
+# Models — override on the command line with MODEL=...
+MODEL_MINILM     := sentence-transformers/all-MiniLM-L6-v2
+MODEL_GEMMA_300M := google/embeddinggemma-300m
+MODEL            ?= $(MODEL_MINILM)
 
-# Active model (default: MiniLM; override on command line)
-MODEL          ?= $(MODEL_MINILM)
+# Filesystem-safe slug from the last component of the model name
+MODEL_SLUG := $(shell echo "$(MODEL)" | tr '/' '\n' | tail -1 | tr '[:upper:]' '[:lower:]' | tr '_' '-')
 
-# Derive a filesystem-safe slug from the model name (last path component, lowercased)
-MODEL_SLUG     := $(shell echo "$(MODEL)" | tr '/' '\n' | tail -1 | tr '[:upper:]' '[:lower:]' | tr '_' '-')
+OUTPUT   ?= $(OUTPUT_DIR)/$(MODEL_SLUG)/projector
+HF_ENV   := env "HF_HUB_CACHE=$(CURDIR)/$(MODELS_DIR)" TRANSFORMERS_VERBOSITY=error
 
-# Input parameters (required for embed target)
-INPUT          ?=
-TEXT_COL       ?=
-OUTPUT         ?= $(OUTPUT_DIR)/$(MODEL_SLUG)/projector
-
-# HuggingFace cache env vars (HF_HUB_CACHE is the current standard)
-HF_ENV         := env "HF_HUB_CACHE=$(CURDIR)/$(MODELS_DIR)" TRANSFORMERS_VERBOSITY=error
-
-.PHONY: all venv embed clean clean-all info download-model download-all-models list-models
+.PHONY: all venv download-model download-all-models embed clean clean-all help
 
 all: venv
 
-# =============================================================================
-# Virtual Environment
-# =============================================================================
+# -- Virtual environment ------------------------------------------------------
+
 venv: $(VENV_DONE)
 
 $(VENV_DONE):
-	@echo "═══════════════════════════════════════════════════════════════"
-	@echo "Setting up Python virtual environment"
-	@echo "═══════════════════════════════════════════════════════════════"
 	@if command -v pyenv >/dev/null 2>&1; then \
-		echo "Using pyenv..."; \
 		pyenv install -s $(PYTHON_VERSION); \
 		pyenv local $(PYTHON_VERSION); \
 	fi
 	@python3 -m venv $(VENV_DIR)
 	@$(PIP) install --upgrade pip -q
 	@$(PIP) install sentence-transformers numpy pandas -q
-	@mkdir -p $(OUTPUT_DIR) $(MODELS_DIR) $(SCRIPTS_DIR)
+	@mkdir -p $(OUTPUT_DIR) $(MODELS_DIR)
 	@touch $@
 	@echo "✓ Virtual environment ready"
 
-# =============================================================================
-# Directory creation
-# =============================================================================
-$(MODELS_DIR) $(OUTPUT_DIR):
-	@mkdir -p $@
+# -- Models -------------------------------------------------------------------
 
-# =============================================================================
-# Model Download (optional pre-download)
-# =============================================================================
-download-model: $(VENV_DONE) | $(MODELS_DIR)
-	@echo "Downloading embedding model: $(MODEL)"
+download-model: $(VENV_DONE)
+	@mkdir -p $(MODELS_DIR)
+	@echo "Downloading: $(MODEL)"
 	@$(HF_ENV) $(PYTHON) -c \
 		"from sentence_transformers import SentenceTransformer; \
 		SentenceTransformer('$(MODEL)', backend='torch', trust_remote_code=True, model_kwargs={'torch_dtype': 'float32'})"
-	@echo "✓ Model cached to $(MODELS_DIR)"
+	@echo "✓ Cached to $(MODELS_DIR)"
 
-download-all-models: $(VENV_DONE) | $(MODELS_DIR)
-	@echo "Downloading all known models..."
-	@$(MAKE) download-model MODEL=$(MODEL_MINILM)
-	@$(MAKE) download-model MODEL=$(MODEL_GEMMA_300M)
-	@echo "✓ All models cached"
+download-all-models: $(VENV_DONE)
+	@for m in $(MODEL_MINILM) $(MODEL_GEMMA_300M); do \
+		$(MAKE) download-model MODEL=$$m; \
+	done
 
-list-models:
-	@echo "Available models:"
-	@echo "  minilm     $(MODEL_MINILM)   (no auth required)"
-	@echo "  gemma-300m $(MODEL_GEMMA_300M)  (HF_TOKEN required - gated model)"
-	@echo ""
-	@echo "Usage:"
-	@echo "  make download-model MODEL=\$$(MODEL_MINILM)"
-	@echo "  make download-model MODEL=\$$(MODEL_GEMMA_300M)  # requires: export HF_TOKEN=hf_..."
-	@echo "  make embed INPUT=data/file.csv TEXT_COL=title MODEL=\$$(MODEL_GEMMA_300M)"
+# -- Embed --------------------------------------------------------------------
 
-# =============================================================================
-# Embedding Generation
-# =============================================================================
 embed: $(VENV_DONE)
-	@if [ -z "$(INPUT)" ]; then \
-		echo "❌ Error: INPUT not specified"; \
-		echo "Usage: make embed INPUT=data/myfile.csv TEXT_COL=description"; \
-		exit 1; \
-	fi
-	@if [ -z "$(TEXT_COL)" ]; then \
-		echo "❌ Error: TEXT_COL not specified"; \
-		echo "Usage: make embed INPUT=data/myfile.csv TEXT_COL=description"; \
+	@if [ -z "$(INPUT)" ] || [ -z "$(TEXT_COL)" ]; then \
+		echo "❌  Usage: make embed INPUT=data/file.csv TEXT_COL=description [MODEL=...]"; \
 		exit 1; \
 	fi
 	@if [ ! -f "$(INPUT)" ]; then \
-		echo "❌ Error: Input file '$(INPUT)' not found"; \
+		echo "❌  Input file not found: $(INPUT)"; \
 		exit 1; \
 	fi
 	@mkdir -p $(OUTPUT_DIR)/$(MODEL_SLUG)
-	@echo "═══════════════════════════════════════════════════════════════"
-	@echo "Generating embeddings"
-	@echo "═══════════════════════════════════════════════════════════════"
-	@echo "  Input:    $(INPUT)"
-	@echo "  Column:   $(TEXT_COL)"
-	@echo "  Model:    $(MODEL)"
-	@echo "  Output:   $(OUTPUT)_vectors.tsv / $(OUTPUT)_metadata.tsv"
-	@echo ""
-	@$(HF_ENV) $(PYTHON) $(SCRIPTS_DIR)/embed_csv.py \
+	@$(HF_ENV) $(PYTHON) scripts/embed_csv.py \
 		"$(INPUT)" \
 		--text-columns "$(TEXT_COL)" \
 		--output "$(OUTPUT)" \
 		--model "$(MODEL)"
+
+# -- Housekeeping -------------------------------------------------------------
+
+clean:
+	rm -rf $(OUTPUT_DIR)
+
+clean-all: clean
+	rm -rf $(VENV_DIR) $(MODELS_DIR)
+
+# -- Help ---------------------------------------------------------------------
+
+help:
+	@echo "Usage: make <target> [VARIABLE=value ...]"
+	@echo ""
+	@echo "Targets:"
+	@echo "  venv                 Create Python virtual environment"
+	@echo "  download-model       Download MODEL to models/ cache"
+	@echo "  download-all-models  Download all known models"
+	@echo "  embed                Generate embeddings from a CSV"
+	@echo "  clean                Remove output/"
+	@echo "  clean-all            Remove output/, models/, .venv/"
+	@echo "  help                 Show this help"
+	@echo ""
+	@echo "Variables:"
+	@echo "  MODEL      HuggingFace model ID (default: $(MODEL_MINILM))"
+	@echo "  INPUT      Path to input CSV (required for embed)"
+	@echo "  TEXT_COL   Column(s) to embed, comma-separated (required for embed)"
+	@echo "  OUTPUT     Output prefix (default: output/<model-slug>/projector)"
+	@echo ""
+	@echo "Available models:"
+	@echo "  $(MODEL_MINILM)   no auth required"
+	@echo "  $(MODEL_GEMMA_300M)            gated — export HF_TOKEN=hf_... first"
+	@echo ""
+	@echo "Examples:"
+	@echo "  make embed INPUT=data/sample.csv TEXT_COL=description"
+	@echo "  make embed INPUT=data/sample.csv TEXT_COL=description MODEL=$(MODEL_GEMMA_300M)"
+	@echo "  make download-model MODEL=$(MODEL_GEMMA_300M)"

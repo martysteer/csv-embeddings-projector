@@ -18,8 +18,8 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from scipy.cluster.hierarchy import fcluster, linkage
-from scipy.spatial.distance import pdist
+from sklearn.cluster import AgglomerativeClustering
+from tqdm import tqdm
 
 
 def load_vectors(path: Path) -> np.ndarray:
@@ -34,30 +34,22 @@ def load_metadata(path: Path) -> pd.DataFrame:
 
 def cluster(vectors: np.ndarray, levels: list[int]) -> dict[int, np.ndarray]:
     """
-    Build a Ward linkage tree on cosine distances, then cut at each level.
-    Returns a dict of {n_clusters: label_array}.
+    Run sklearn Ward agglomerative clustering once per level.
 
-    Ward linkage requires Euclidean distance. Sentence-transformer vectors are
-    L2-normalised, so Euclidean distance is monotonically equivalent to cosine
-    distance — Ward works correctly here without extra normalisation.
+    Unlike scipy's linkage + fcluster approach, this never builds a full
+    n×n distance matrix — memory stays O(n) rather than O(n²). The
+    trade-off is we fit once per level rather than cutting a single
+    dendrogram, which is fine for a predefined set of levels.
     """
-    print(f"🔗 Building linkage tree ({len(vectors)} vectors)...")
-    distances = pdist(vectors, metric='euclidean')
-    Z = linkage(distances, method='ward')
-
     results = {}
-    for n in sorted(levels):
-        labels = fcluster(Z, t=n, criterion='maxclust')
+    for n in tqdm(sorted(levels), desc="Clustering levels", unit="level"):
+        model = AgglomerativeClustering(n_clusters=n, linkage='ward')
+        labels = model.fit_predict(vectors) + 1  # make 1-based to match fcluster
         results[n] = labels
-        print(f"   cluster_{n:02d}: {n} clusters "
-              f"(sizes: {_size_summary(labels)})")
+        counts = np.bincount(labels)[1:]
+        tqdm.write(f"   cluster_{n:02d}: {n} clusters "
+                   f"(min={counts.min()} med={int(np.median(counts))} max={counts.max()})")
     return results
-
-
-def _size_summary(labels: np.ndarray) -> str:
-    """Return a compact min/median/max size string."""
-    counts = np.bincount(labels)[1:]  # fcluster labels are 1-based
-    return f"min={counts.min()} med={int(np.median(counts))} max={counts.max()}"
 
 
 def main():

@@ -45,7 +45,7 @@ $(VENV_DONE):
 	fi
 	@python3 -m venv $(VENV_DIR)
 	@$(PIP) install --upgrade pip -q
-	@$(PIP) install sentence-transformers numpy pandas scipy -q
+	@$(PIP) install sentence-transformers numpy pandas scipy scikit-learn tqdm -q
 	@mkdir -p $(OUTPUT_DIR) $(MODELS_DIR)
 	@touch $@
 	@echo "✓ Virtual environment ready"
